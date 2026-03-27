@@ -1,0 +1,758 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>The Dollar Circuit — Stock Elephant Part II</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0a0f1a; color: #e2e8f0; font-family: 'JetBrains Mono','Fira Code','Courier New',monospace; }
+  button { cursor: pointer; font-family: inherit; }
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: #0d1424; }
+  ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+// ─── DATA ─────────────────────────────────────────────────────────────────────
+
+const PHASES = {
+  clean:    { label: "Phase 1: Clean Circuit",       color: "#22c55e", bg: "rgba(34,197,94,0.08)",    rounds: [1,2,3,4,5] },
+  fracture: { label: "Phase 2: Routing Fractures",   color: "#f59e0b", bg: "rgba(245,158,11,0.08)",   rounds: [6,7,8,"8b",9] },
+  stress:   { label: "Phase 3: Stress & Cliff",      color: "#ef4444", bg: "rgba(239,68,68,0.08)",    rounds: [10,11,12,13,14,15] },
+  threshold:{ label: "Phase 4: The Hard Threshold",  color: "#7f1d1d", bg: "rgba(127,29,29,0.12)",    rounds: [16] },
+};
+
+const getPhase = (r) => {
+  if (r === 16) return "threshold";
+  if (r === "8b") return "fracture";
+  if (r <= 5) return "clean";
+  if (r <= 9) return "fracture";
+  return "stress";
+};
+
+const ROUNDS = [
+  { r:1, desc:"Baseline: all flows direct. BoJ buys T-bills at NY Fed. OilCo parks surplus directly. TIC perfectly matches NIIP. The stock accumulates $38 every round — structural, not cyclical.",
+    boj_direct:320, boj_globalbank:0, boj_eurocustody:0, bof:162, oilco_direct:116, oilco_hedgeco:0, oilco_africaco:0,
+    hedgeco_tbills:0, hedgeco_repo:0, globalbank_tbills:0, eurocustody_tbills:0, africaco_loan:0,
+    niip:-598, tic_total:598, tic_gap:0, sddd_floor:30, theta_star:50, boj_total:320, boj_direct_free:290, zone:"I",
+    flows:[
+      {from:"JapanCo",to:"BoJ",amt:20,color:"#22c55e",label:"+$20 trade surplus"},
+      {from:"BoJ",to:"AmeriCo T-bills",amt:20,color:"#22c55e",label:"direct purchase (Path 1)"},
+      {from:"OilCo",to:"AmeriCo T-bills",amt:16,color:"#22c55e",label:"direct purchase (Path 1)"},
+      {from:"FranceCo",to:"AmeriCo T-bills",amt:2,color:"#22c55e",label:"direct purchase (Path 1)"},
+    ]},
+  { r:2, desc:"Round 2: Same pattern. Stock accumulates. NIIP deteriorates $38. TIC gap still zero — system fully visible.",
+    boj_direct:340, boj_globalbank:0, boj_eurocustody:0, bof:164, oilco_direct:132, oilco_hedgeco:0, oilco_africaco:0,
+    hedgeco_tbills:0, hedgeco_repo:0, globalbank_tbills:0, eurocustody_tbills:0, africaco_loan:0,
+    niip:-636, tic_total:636, tic_gap:0, sddd_floor:30, theta_star:50, boj_total:340, boj_direct_free:310, zone:"I",
+    flows:[
+      {from:"JapanCo",to:"BoJ",amt:20,color:"#22c55e",label:"+$20 surplus"},
+      {from:"BoJ",to:"AmeriCo T-bills",amt:20,color:"#22c55e",label:"direct purchase"},
+      {from:"OilCo",to:"AmeriCo T-bills",amt:16,color:"#22c55e",label:"direct purchase"},
+      {from:"FranceCo",to:"AmeriCo T-bills",amt:2,color:"#22c55e",label:"direct"},
+    ]},
+  { r:3, desc:"Round 3: Accumulation continues. The deficit is structural — not a policy choice. Every round, $38 more in external obligations.",
+    boj_direct:360, boj_globalbank:0, boj_eurocustody:0, bof:166, oilco_direct:148, oilco_hedgeco:0, oilco_africaco:0,
+    hedgeco_tbills:0, hedgeco_repo:0, globalbank_tbills:0, eurocustody_tbills:0, africaco_loan:0,
+    niip:-674, tic_total:674, tic_gap:0, sddd_floor:30, theta_star:50, boj_total:360, boj_direct_free:330, zone:"I",
+    flows:[
+      {from:"JapanCo",to:"BoJ",amt:20,color:"#22c55e",label:"+$20 surplus"},
+      {from:"BoJ",to:"AmeriCo T-bills",amt:20,color:"#22c55e",label:"direct purchase"},
+      {from:"OilCo",to:"AmeriCo T-bills",amt:16,color:"#22c55e",label:"direct purchase"},
+      {from:"FranceCo",to:"AmeriCo T-bills",amt:2,color:"#22c55e",label:"direct"},
+    ]},
+  { r:4, desc:"Round 4: Four rounds of clean circuit. The BoP identity holds perfectly. The stock only goes one direction.",
+    boj_direct:380, boj_globalbank:0, boj_eurocustody:0, bof:168, oilco_direct:164, oilco_hedgeco:0, oilco_africaco:0,
+    hedgeco_tbills:0, hedgeco_repo:0, globalbank_tbills:0, eurocustody_tbills:0, africaco_loan:0,
+    niip:-712, tic_total:712, tic_gap:0, sddd_floor:30, theta_star:50, boj_total:380, boj_direct_free:350, zone:"I",
+    flows:[
+      {from:"JapanCo",to:"BoJ",amt:20,color:"#22c55e",label:"+$20 surplus"},
+      {from:"BoJ",to:"AmeriCo T-bills",amt:20,color:"#22c55e",label:"direct purchase"},
+      {from:"OilCo",to:"AmeriCo T-bills",amt:16,color:"#22c55e",label:"direct purchase"},
+      {from:"FranceCo",to:"AmeriCo T-bills",amt:2,color:"#22c55e",label:"direct"},
+    ]},
+  { r:5, desc:"Round 5: Clean circuit complete. AmeriCo NIIP has deteriorated $190 in five rounds. All of it visible. None of it reversing.",
+    boj_direct:400, boj_globalbank:0, boj_eurocustody:0, bof:170, oilco_direct:180, oilco_hedgeco:0, oilco_africaco:0,
+    hedgeco_tbills:0, hedgeco_repo:0, globalbank_tbills:0, eurocustody_tbills:0, africaco_loan:0,
+    niip:-750, tic_total:750, tic_gap:0, sddd_floor:30, theta_star:50, boj_total:400, boj_direct_free:370, zone:"I",
+    flows:[
+      {from:"JapanCo",to:"BoJ",amt:20,color:"#22c55e",label:"+$20 surplus"},
+      {from:"BoJ",to:"AmeriCo T-bills",amt:20,color:"#22c55e",label:"direct purchase"},
+      {from:"OilCo",to:"AmeriCo T-bills",amt:16,color:"#22c55e",label:"direct purchase"},
+      {from:"FranceCo",to:"AmeriCo T-bills",amt:2,color:"#22c55e",label:"direct"},
+    ]},
+  { r:6, desc:"Russia sanctions alarm BoJ. New IDD flows routed via GlobalBankCo London. TIC shows UK buying T-bills — Japan appears flat. NIIP unchanged: the money changed mailing address, not destination.",
+    boj_direct:400, boj_globalbank:20, boj_eurocustody:0, bof:172, oilco_direct:196, oilco_hedgeco:0, oilco_africaco:0,
+    hedgeco_tbills:0, hedgeco_repo:0, globalbank_tbills:20, eurocustody_tbills:0, africaco_loan:0,
+    niip:-788, tic_total:788, tic_gap:0, sddd_floor:30, theta_star:50, boj_total:420, boj_direct_free:370, zone:"I",
+    flows:[
+      {from:"JapanCo",to:"BoJ",amt:20,color:"#f59e0b",label:"+$20 surplus"},
+      {from:"BoJ",to:"GlobalBankCo",amt:20,color:"#3b82f6",label:"deposit (new route — sanctions fear)"},
+      {from:"GlobalBankCo",to:"AmeriCo T-bills",amt:20,color:"#3b82f6",label:"buys T-bills (TIC: UK)"},
+      {from:"OilCo",to:"AmeriCo T-bills",amt:16,color:"#22c55e",label:"direct (unchanged)"},
+      {from:"FranceCo",to:"AmeriCo T-bills",amt:2,color:"#22c55e",label:"direct"},
+    ]},
+  { r:7, desc:"OilCo routes $16 surplus via HedgeCo (Cayman basis trade). HedgeCo buys $32 T-bills (2x leverage via repo). Repo collateral transfer breaks TIC chain. First TIC gap appears: $16. NIIP still correct at -$826.",
+    boj_direct:400, boj_globalbank:40, boj_eurocustody:0, bof:174, oilco_direct:196, oilco_hedgeco:16, oilco_africaco:0,
+    hedgeco_tbills:32, hedgeco_repo:16, globalbank_tbills:40, eurocustody_tbills:0, africaco_loan:0,
+    niip:-826, tic_total:810, tic_gap:16, sddd_floor:30, theta_star:50, boj_total:440, boj_direct_free:370, zone:"I",
+    showTicMechanism:true,
+    flows:[
+      {from:"JapanCo",to:"BoJ",amt:20,color:"#f59e0b",label:"+$20 surplus"},
+      {from:"BoJ",to:"GlobalBankCo",amt:20,color:"#3b82f6",label:"via GlobalBankCo"},
+      {from:"GlobalBankCo",to:"AmeriCo T-bills",amt:20,color:"#3b82f6",label:"TIC: UK"},
+      {from:"OilCo",to:"HedgeCo",amt:16,color:"#8b5cf6",label:"LP equity (new)"},
+      {from:"HedgeCo",to:"AmeriCo T-bills",amt:32,color:"#8b5cf6",label:"$32 via basis trade (TIC: $0)"},
+      {from:"RepoDesk",to:"HedgeCo",amt:16,color:"#6b7280",label:"repo financing"},
+      {from:"FranceCo",to:"AmeriCo T-bills",amt:2,color:"#22c55e",label:"direct"},
+    ]},
+  { r:8, desc:"BoJ moves $100 existing holdings to EuroCustodyCo (Belgium). TIC: Japan -$100, Belgium +$100. Total TIC unchanged. NIIP unchanged. This is attribution shift not new invisibility — the aggregate is right, the country breakdown is wrong.",
+    boj_direct:300, boj_globalbank:60, boj_eurocustody:100, bof:176, oilco_direct:212, oilco_hedgeco:16, oilco_africaco:0,
+    hedgeco_tbills:32, hedgeco_repo:16, globalbank_tbills:60, eurocustody_tbills:100, africaco_loan:0,
+    niip:-864, tic_total:848, tic_gap:16, sddd_floor:30, theta_star:50, boj_total:460, boj_direct_free:270, zone:"I",
+    flows:[
+      {from:"BoJ",to:"EuroCustodyCo",amt:100,color:"#f97316",label:"custody transfer (TIC: Belgium +$100, Japan -$100)"},
+      {from:"BoJ",to:"GlobalBankCo",amt:20,color:"#3b82f6",label:"new IDD via GlobalBankCo"},
+      {from:"GlobalBankCo",to:"AmeriCo T-bills",amt:20,color:"#3b82f6",label:"TIC: UK"},
+      {from:"OilCo",to:"AmeriCo T-bills",amt:16,color:"#22c55e",label:"direct"},
+      {from:"FranceCo",to:"AmeriCo T-bills",amt:2,color:"#22c55e",label:"direct"},
+    ]},
+  { r:"8b", label:"8b", desc:"THE COFER-SWIFT DIVERGENCE. BoJ diversifies $50 IDD into FranceCo bonds (euro). COFER analog: BoJ dollar share 430/480 = 90% — falling. SWIFT analog: 100% unchanged — oil still invoiced in dollars, all LCs dollar-denominated. The investment portfolio diversified. The operational necessity did not.",
+    boj_direct:250, boj_globalbank:80, boj_eurocustody:100, bof:178, oilco_direct:228, oilco_hedgeco:16, oilco_africaco:0,
+    hedgeco_tbills:32, hedgeco_repo:16, globalbank_tbills:80, eurocustody_tbills:100, africaco_loan:0,
+    niip:-852, tic_total:836, tic_gap:16, sddd_floor:30, theta_star:50,
+    boj_total:480, boj_direct_free:220, boj_total_dollar:430, boj_franceco_bonds:50, cofer_analog:90, swift_analog:100, zone:"I",
+    flows:[
+      {from:"BoJ",to:"FranceCo bonds",amt:50,color:"#f97316",label:"IDD diversification — redeems $50 T-bills, buys FranceCo bonds"},
+      {from:"BoJ",to:"GlobalBankCo",amt:20,color:"#3b82f6",label:"new IDD via GlobalBankCo"},
+      {from:"OilCo",to:"AmeriCo T-bills",amt:16,color:"#22c55e",label:"direct"},
+      {from:"FranceCo",to:"AmeriCo T-bills",amt:2,color:"#22c55e",label:"direct"},
+    ]},
+  { r:9, desc:"OilCo lends $30 to AfricaCo (BRI-style infrastructure). Redeems $30 T-bills. New $16 surplus still direct. Dollars lent to AfricaCo leave the circuit — but AfricaCo's dollar debt means they return when serviced. Temporary escape only.",
+    boj_direct:300, boj_globalbank:80, boj_eurocustody:100, bof:178, oilco_direct:198, oilco_hedgeco:16, oilco_africaco:30,
+    hedgeco_tbills:32, hedgeco_repo:16, globalbank_tbills:80, eurocustody_tbills:100, africaco_loan:30,
+    niip:-872, tic_total:856, tic_gap:16, sddd_floor:30, theta_star:50, boj_total:480, boj_direct_free:270, zone:"I",
+    flows:[
+      {from:"OilCo",to:"AfricaCo",amt:30,color:"#6b7280",label:"bilateral loan — exits circuit"},
+      {from:"OilCo",to:"AmeriCo T-bills",amt:-30,color:"#ef4444",label:"redeems $30 T-bills"},
+      {from:"BoJ",to:"GlobalBankCo",amt:20,color:"#3b82f6",label:"IDD via GlobalBankCo"},
+      {from:"OilCo",to:"AmeriCo T-bills",amt:16,color:"#22c55e",label:"new direct surplus"},
+      {from:"FranceCo",to:"AmeriCo T-bills",amt:2,color:"#22c55e",label:"direct"},
+    ]},
+  { r:10, desc:"Commodity shock. Oil price +40%. JapanCo net surplus falls $20→$16. SDDD floor rises $30→$42 (Venugopal Prop 2 — commodity volatility amplification). BoJ buffer compresses from the floor side, not from direct depletion.",
+    boj_direct:300, boj_globalbank:96, boj_eurocustody:100, bof:180, oilco_direct:212, oilco_hedgeco:16, oilco_africaco:30,
+    hedgeco_tbills:32, hedgeco_repo:16, globalbank_tbills:96, eurocustody_tbills:100, africaco_loan:30,
+    niip:-904, tic_total:888, tic_gap:16, sddd_floor:42, theta_star:65, boj_total:496, boj_direct_free:258, zone:"I",
+    flows:[
+      {from:"JapanCo",to:"BoJ",amt:16,color:"#ef4444",label:"+$16 (down from $20 — oil cost up)"},
+      {from:"BoJ",to:"GlobalBankCo",amt:16,color:"#3b82f6",label:"IDD via GlobalBankCo"},
+      {from:"OilCo",to:"AmeriCo T-bills",amt:14,color:"#f59e0b",label:"direct (higher oil earnings)"},
+      {from:"FranceCo",to:"AmeriCo T-bills",amt:2,color:"#22c55e",label:"direct"},
+    ]},
+  { r:11, desc:"Yen crisis. BoJ deploys $80 FX intervention — sells $80 T-bills to GlobalBankCo (foreign entity). boj_direct 300→220. AmeriCo NIIP UNCHANGED — T-bills stayed foreign, just different holder. Buffer: 220-42=$178.",
+    boj_direct:220, boj_globalbank:108, boj_eurocustody:100, bof:182, oilco_direct:226, oilco_hedgeco:16, oilco_africaco:30,
+    hedgeco_tbills:32, hedgeco_repo:16, globalbank_tbills:188, eurocustody_tbills:100, africaco_loan:30,
+    niip:-932, tic_total:916, tic_gap:16, sddd_floor:42, theta_star:65, boj_total:428, boj_direct_free:178, zone:"I",
+    flows:[
+      {from:"BoJ",to:"GlobalBankCo",amt:80,color:"#ef4444",label:"FX intervention: sells T-bills (NIIP unchanged — stays foreign)"},
+      {from:"JapanCo",to:"BoJ",amt:12,color:"#ef4444",label:"+$12 surplus (lower earnings)"},
+      {from:"BoJ",to:"GlobalBankCo",amt:12,color:"#3b82f6",label:"new IDD via deposit"},
+      {from:"OilCo",to:"AmeriCo T-bills",amt:14,color:"#f59e0b",label:"direct"},
+      {from:"FranceCo",to:"AmeriCo T-bills",amt:2,color:"#22c55e",label:"direct"},
+    ]},
+  { r:12, desc:"SCISSORS (Venugopal App. B). AmeriCo tariffs JapanCo 35%. Blade 1: textile earnings $30→$20, net surplus $16→$6. Replenishment rate collapses 63%. Blade 2: energy cost sticky, SDDD floor $42→$52. Double compression: buffer refills slower AND floor rises simultaneously.",
+    boj_direct:223, boj_globalbank:111, boj_eurocustody:100, bof:184, oilco_direct:240, oilco_hedgeco:16, oilco_africaco:30,
+    hedgeco_tbills:32, hedgeco_repo:16, globalbank_tbills:191, eurocustody_tbills:100, africaco_loan:30,
+    niip:-954, tic_total:938, tic_gap:16, sddd_floor:52, theta_star:80,
+    boj_total:434, boj_direct_free:171,
+    energy_cost:14, garment_earnings:20, net_surplus:6, replenishment_rate:6, replenishment_pre:16,
+    floor_shift:10, floor_pre:42, boj_liquidating:false, zone:"I",
+    flows:[
+      {from:"JapanCo",to:"BoJ",amt:6,color:"#ef4444",label:"+$6 (tariff crushes earnings)"},
+      {from:"BoJ",to:"AmeriCo T-bills",amt:3,color:"#3b82f6",label:"$3 direct"},
+      {from:"BoJ",to:"GlobalBankCo",amt:3,color:"#3b82f6",label:"$3 via GlobalBankCo"},
+      {from:"OilCo",to:"AmeriCo T-bills",amt:14,color:"#f59e0b",label:"direct"},
+    ]},
+  { r:13, desc:"Correspondent banks observe BoJ reserve decline trend. Hysteresis penalty H activates — effective floor rises beyond physical SDDD. Theta* = $82 now only $56 above boj_direct of $226. Buffer compressing $6-$22/round.",
+    boj_direct:226, boj_globalbank:114, boj_eurocustody:100, bof:186, oilco_direct:254, oilco_hedgeco:16, oilco_africaco:30,
+    hedgeco_tbills:32, hedgeco_repo:16, globalbank_tbills:194, eurocustody_tbills:100, africaco_loan:30,
+    niip:-976, tic_total:960, tic_gap:16, sddd_floor:52, theta_star:82, boj_total:440, boj_direct_free:174, zone:"I→II",
+    flows:[
+      {from:"BoJ",to:"AmeriCo T-bills",amt:3,color:"#ef4444",label:"minimal new inflow"},
+      {from:"BoJ",to:"GlobalBankCo",amt:3,color:"#3b82f6",label:"GlobalBankCo"},
+      {from:"OilCo",to:"AmeriCo T-bills",amt:14,color:"#f59e0b",label:"direct"},
+      {from:"CorrespondentBanks",to:"JapanCo LCs",amt:-15,color:"#ef4444",label:"LC lines being reduced"},
+    ]},
+  { r:14, desc:"Zone II. BoJ deploys $60 FX — sells to GlobalBankCo. boj_direct 226→166. BoJ has switched from Treasury BUYER to Treasury SELLER. NIIP UNCHANGED — T-bills still foreign, just different holder. Buffer: 166-52=$114. Above Theta*=$82 by $32. IMF call window: NOW.",
+    boj_direct:166, boj_globalbank:120, boj_eurocustody:100, bof:188, oilco_direct:268, oilco_hedgeco:16, oilco_africaco:30,
+    hedgeco_tbills:32, hedgeco_repo:16, globalbank_tbills:260, eurocustody_tbills:100, africaco_loan:30,
+    niip:-998, tic_total:982, tic_gap:16, sddd_floor:52, theta_star:82,
+    boj_total:386, boj_direct_free:114,
+    energy_cost:14, garment_earnings:20, net_surplus:6, replenishment_rate:0, replenishment_pre:16,
+    floor_shift:10, floor_pre:42, boj_liquidating:true, zone:"II",
+    flows:[
+      {from:"BoJ",to:"GlobalBankCo",amt:60,color:"#ef4444",label:"FX intervention: T-bills to GlobalBankCo (NIIP unchanged)"},
+      {from:"JapanCo",to:"BoJ",amt:6,color:"#ef4444",label:"minimal inflow — scissors compressing"},
+      {from:"BoJ",to:"GlobalBankCo",amt:6,color:"#3b82f6",label:"new IDD deposit"},
+      {from:"OilCo",to:"AmeriCo T-bills",amt:14,color:"#f59e0b",label:"direct"},
+      {from:"FranceCo",to:"AmeriCo T-bills",amt:2,color:"#22c55e",label:"direct"},
+    ]},
+  { r:15, desc:"CLIFF CROSSED. BoJ deploys $120 FX — boj_direct 166→46. SDDD floor: $52. boj_direct $46 < floor $52. LC capacity: ZERO. Zero bids on JapanCo LCs. Oil stops. Standard 3-month cover = 3.9x — LOOKS FINE. Venugopal decomposition: direct=$46 < floor=$52. ZONE III. Standard framework is blind to the cliff.",
+    boj_direct:46, boj_globalbank:126, boj_eurocustody:100, bof:190, oilco_direct:282, oilco_hedgeco:16, oilco_africaco:30,
+    hedgeco_tbills:32, hedgeco_repo:16, globalbank_tbills:386, eurocustody_tbills:100, africaco_loan:30,
+    niip:-1020, tic_total:1004, tic_gap:16, sddd_floor:52, theta_star:82, boj_total:272, boj_direct_free:0, zone:"III",
+    flows:[
+      {from:"BoJ",to:"GlobalBankCo",amt:120,color:"#ef4444",label:"massive FX defense — sells to GlobalBankCo (NIIP unchanged, cliff crossed)"},
+      {from:"CorrespondentBanks",to:"JapanCo LCs",amt:0,color:"#ef4444",label:"ZERO BIDS — cliff crossed — oil stops arriving"},
+      {from:"JapanCo",to:"BoJ",amt:6,color:"#ef4444",label:"inflow continues but irrelevant — below floor"},
+    ]},
+  { r:16, label:"16", desc:"THE HARD THRESHOLD. HedgeCo unwinds — sells $32 T-bills to FedCo. TIC gap closes. FedCo becomes only buyer: absorbs $38 new issuance + $32 HedgeCo unwind = $70 total. JapanCo output falls 30% — oil cutoff. Toy world κ: claims $1,010 / output $510 = 1.98. FedCo can always print. The constraint is real: each dollar created is a claim on a productive base that is simultaneously shrinking.",
+    boj_direct:46, boj_globalbank:132, boj_eurocustody:100, bof:192, oilco_direct:282, oilco_hedgeco:0, oilco_africaco:30,
+    hedgeco_tbills:0, hedgeco_repo:0, globalbank_tbills:392, eurocustody_tbills:100, africaco_loan:30,
+    niip:-1010, tic_total:1010, tic_gap:0, sddd_floor:52, theta_star:82, boj_total:278, boj_direct_free:0,
+    fedco_balance:70, japanco_output:70, toy_kappa:1.98, zone:"III",
+    flows:[
+      {from:"HedgeCo",to:"FedCo",amt:32,color:"#7f1d1d",label:"HedgeCo unwind — FedCo absorbs"},
+      {from:"FedCo",to:"AmeriCo T-bills",amt:70,color:"#7f1d1d",label:"FedCo buys all issuance + unwind ($70 total)"},
+      {from:"OilCo",to:"US bank deposit",amt:14,color:"#6b7280",label:"OilCo suspends T-bill purchase"},
+      {from:"BoJ",to:"GlobalBankCo",amt:6,color:"#ef4444",label:"minimal — Zone III, factories shut"},
+    ]},
+];
+
+// ─── HELPERS ──────────────────────────────────────────────────────────────────
+
+const fmt = (n) => `${n < 0 ? "-" : ""}$${Math.abs(n)}`;
+const fmtB = (n) => `$${Math.abs(n).toLocaleString()}B`;
+
+// ─── SUB-COMPONENTS ───────────────────────────────────────────────────────────
+
+function PhaseTag({ zone }) {
+  const colors = {
+    "I":    {bg:"#052e16",border:"#16a34a",text:"#4ade80"},
+    "I→II": {bg:"#1c1400",border:"#d97706",text:"#fbbf24"},
+    "II":   {bg:"#2d0a0a",border:"#dc2626",text:"#f87171"},
+    "III":  {bg:"#1a0000",border:"#7f1d1d",text:"#fca5a5"},
+  };
+  const c = colors[zone] || colors["I"];
+  return (
+    <span style={{background:c.bg,border:`1px solid ${c.border}`,color:c.text,
+      borderRadius:4,padding:"2px 10px",fontSize:11,letterSpacing:1,fontWeight:700}}>
+      ZONE {zone}
+    </span>
+  );
+}
+
+function Meter({ label, value, max, min=0, color }) {
+  const pct = Math.max(0, Math.min(100, ((value - min) / (max - min)) * 100));
+  return (
+    <div style={{marginBottom:10}}>
+      <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+        <span style={{color:"#94a3b8",fontSize:11}}>{label}</span>
+        <span style={{color,fontSize:13,fontWeight:700}}>{fmt(value)}</span>
+      </div>
+      <div style={{background:"#1e293b",borderRadius:3,height:6,overflow:"hidden"}}>
+        <div style={{width:`${pct}%`,height:"100%",background:color,transition:"width 0.6s ease",borderRadius:3}}/>
+      </div>
+    </div>
+  );
+}
+
+function BalanceRow({ label, value, color, indent=false, highlight=false }) {
+  return (
+    <div style={{display:"flex",justifyContent:"space-between",padding:"3px 0",
+      paddingLeft:indent?12:0, borderBottom:highlight?`1px solid ${color}22`:"none"}}>
+      <span style={{color:"#94a3b8",fontSize:11}}>{indent?"↳ ":""}{label}</span>
+      <span style={{color:highlight?color:"#cbd5e1",fontSize:12,fontWeight:highlight?700:400}}>
+        {value>=0?"$":"-$"}{Math.abs(value)}
+      </span>
+    </div>
+  );
+}
+
+function FlowItem({ flow }) {
+  return (
+    <div style={{display:"flex",alignItems:"center",gap:8,padding:"4px 8px",marginBottom:3,
+      background:`${flow.color}11`,borderLeft:`2px solid ${flow.color}`,borderRadius:"0 4px 4px 0"}}>
+      <span style={{color:flow.color,fontSize:11,fontWeight:700,minWidth:36}}>${flow.amt}</span>
+      <span style={{color:"#94a3b8",fontSize:10}}>{flow.from} → {flow.to}</span>
+      <span style={{color:"#64748b",fontSize:10,marginLeft:"auto"}}>{flow.label}</span>
+    </div>
+  );
+}
+
+function NIIPChart({ rounds, currentR }) {
+  const w=500, h=120, pad={t:10,r:10,b:25,l:55};
+  const iW=w-pad.l-pad.r, iH=h-pad.t-pad.b;
+  const minN=-1100, maxN=0;
+  const xS=(i)=>pad.l+(i/(rounds.length-1))*iW;
+  const yS=(v)=>pad.t+((v-maxN)/(minN-maxN))*iH;
+  const niipPts=rounds.map((rd,i)=>`${xS(i)},${yS(rd.niip)}`).join(" ");
+  const ticPts=rounds.map((rd,i)=>`${xS(i)},${yS(-rd.tic_total)}`).join(" ");
+  return (
+    <svg width={w} height={h} style={{display:"block",maxWidth:"100%"}}>
+      {[-200,-400,-600,-800,-1000].map(v=>(
+        <g key={v}>
+          <line x1={pad.l} y1={yS(v)} x2={w-pad.r} y2={yS(v)} stroke="#1e293b" strokeWidth={1}/>
+          <text x={pad.l-4} y={yS(v)+4} textAnchor="end" fontSize={8} fill="#475569" fontFamily="monospace">{v}</text>
+        </g>
+      ))}
+      <polyline points={niipPts} fill="none" stroke="#ef4444" strokeWidth={2} strokeLinecap="round"/>
+      <polyline points={ticPts} fill="none" stroke="#3b82f6" strokeWidth={1.5} strokeDasharray="4 2"/>
+      {rounds.map((rd,i)=>{
+        const active=rd.r===currentR;
+        return <circle key={String(rd.r)} cx={xS(i)} cy={yS(rd.niip)} r={active?5:2.5}
+          fill={active?"#ef4444":PHASES[getPhase(rd.r)].color} stroke={active?"#fff":"none"} strokeWidth={active?1.5:0}/>;
+      })}
+      {rounds.map((rd,i)=>(
+        <text key={String(rd.r)} x={xS(i)} y={h-4} textAnchor="middle" fontSize={8}
+          fill={rd.r===currentR?"#f8fafc":"#475569"} fontFamily="monospace" fontWeight={rd.r===currentR?700:400}>
+          R{rd.r}
+        </text>
+      ))}
+      <line x1={w-130} y1={15} x2={w-115} y2={15} stroke="#ef4444" strokeWidth={2}/>
+      <text x={w-112} y={19} fontSize={8} fill="#94a3b8" fontFamily="monospace">NIIP (true)</text>
+      <line x1={w-130} y1={27} x2={w-115} y2={27} stroke="#3b82f6" strokeWidth={1.5} strokeDasharray="4 2"/>
+      <text x={w-112} y={31} fontSize={8} fill="#94a3b8" fontFamily="monospace">TIC reported</text>
+    </svg>
+  );
+}
+
+function StackedBar({ round }) {
+  const entities=[
+    {label:"BoJ direct",value:round.boj_direct,color:"#22c55e"},
+    {label:"BoJ GlobalBank",value:round.boj_globalbank,color:"#3b82f6"},
+    {label:"BoJ EuroCustody",value:round.boj_eurocustody,color:"#f97316"},
+    {label:"BoF",value:round.bof,color:"#a78bfa"},
+    {label:"OilCo direct",value:round.oilco_direct,color:"#fbbf24"},
+    {label:"OilCo HedgeCo",value:round.oilco_hedgeco,color:"#8b5cf6"},
+    {label:"OilCo AfricaCo",value:round.oilco_africaco,color:"#6b7280"},
+  ];
+  const total=entities.reduce((s,e)=>s+e.value,0);
+  return (
+    <div>
+      <div style={{display:"flex",height:24,borderRadius:4,overflow:"hidden",marginBottom:8}}>
+        {entities.filter(e=>e.value>0).map(e=>(
+          <div key={e.label} style={{width:`${(e.value/total)*100}%`,background:e.color,transition:"width 0.5s ease"}} title={`${e.label}: $${e.value}`}/>
+        ))}
+      </div>
+      <div style={{display:"flex",flexWrap:"wrap",gap:"4px 12px"}}>
+        {entities.filter(e=>e.value>0).map(e=>(
+          <div key={e.label} style={{display:"flex",alignItems:"center",gap:4}}>
+            <div style={{width:8,height:8,borderRadius:2,background:e.color}}/>
+            <span style={{color:"#94a3b8",fontSize:10}}>{e.label} <span style={{color:"#e2e8f0"}}>${e.value}</span></span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── MAIN ─────────────────────────────────────────────────────────────────────
+
+function App() {
+  const [rIdx, setRIdx] = useState(0);
+  const [playing, setPlaying] = useState(false);
+  const intervalRef = useRef(null);
+
+  const rd = ROUNDS[rIdx];
+  const phase = getPhase(rd.r);
+  const phaseInfo = PHASES[phase];
+  const buffer = rd.boj_direct - rd.sddd_floor;
+  const bufferColor = buffer > 150 ? "#22c55e" : buffer > 80 ? "#f59e0b" : buffer > 20 ? "#f97316" : "#ef4444";
+
+  useEffect(() => {
+    if (playing) {
+      intervalRef.current = setInterval(() => {
+        setRIdx(i => {
+          if (i >= ROUNDS.length - 1) { setPlaying(false); return i; }
+          return i + 1;
+        });
+      }, 2500);
+    } else {
+      clearInterval(intervalRef.current);
+    }
+    return () => clearInterval(intervalRef.current);
+  }, [playing]);
+
+  return (
+    <div style={{background:"#0a0f1a",color:"#e2e8f0",minHeight:"100vh",fontFamily:"'JetBrains Mono','Fira Code','Courier New',monospace"}}>
+
+      {/* Header */}
+      <div style={{background:"#080d18",borderBottom:"1px solid #1e293b",padding:"12px 20px",
+        display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
+        <div>
+          <div style={{fontSize:11,color:"#64748b",letterSpacing:2,marginBottom:2}}>THE STOCK ELEPHANT — PART II</div>
+          <div style={{fontSize:16,color:"#f8fafc",fontWeight:700}}>The Dollar Circuit: Accumulation, Routing & the SDDD Cliff</div>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+          <PhaseTag zone={rd.zone}/>
+          <div style={{background:phaseInfo.bg,border:`1px solid ${phaseInfo.color}44`,
+            color:phaseInfo.color,padding:"4px 12px",borderRadius:4,fontSize:11,letterSpacing:1}}>
+            {phaseInfo.label}
+          </div>
+        </div>
+      </div>
+
+      {/* Controls */}
+      <div style={{background:"#0d1424",borderBottom:"1px solid #1e293b",padding:"8px 20px",
+        display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+        <button onClick={()=>setPlaying(!playing)}
+          style={{background:playing?"#7f1d1d":"#14532d",border:`1px solid ${playing?"#dc2626":"#16a34a"}`,
+            color:playing?"#fca5a5":"#4ade80",padding:"5px 14px",borderRadius:4,fontSize:11,letterSpacing:1}}>
+          {playing?"■ PAUSE":"▶ PLAY"}
+        </button>
+        <button onClick={()=>{setPlaying(false);setRIdx(Math.max(0,rIdx-1));}}
+          style={{background:"#1e293b",border:"1px solid #334155",color:"#94a3b8",padding:"5px 12px",borderRadius:4,fontSize:11}}>◀</button>
+        <button onClick={()=>{setPlaying(false);setRIdx(Math.min(ROUNDS.length-1,rIdx+1));}}
+          style={{background:"#1e293b",border:"1px solid #334155",color:"#94a3b8",padding:"5px 12px",borderRadius:4,fontSize:11}}>▶</button>
+        <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+          {ROUNDS.map((r2,i)=>{
+            const ph=getPhase(r2.r);
+            const active=i===rIdx;
+            return (
+              <button key={String(r2.r)} onClick={()=>{setPlaying(false);setRIdx(i);}}
+                style={{background:active?PHASES[ph].color:`${PHASES[ph].color}22`,
+                  border:`1px solid ${active?PHASES[ph].color:PHASES[ph].color+"44"}`,
+                  color:active?"#000":PHASES[ph].color,
+                  padding:"3px 8px",borderRadius:3,fontSize:10,fontWeight:active?700:400,transition:"all 0.2s"}}>
+                R{r2.r}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Main grid */}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:0,minHeight:"calc(100vh - 120px)"}}>
+
+        {/* LEFT */}
+        <div style={{borderRight:"1px solid #1e293b",padding:16,overflowY:"auto"}}>
+
+          {/* Round desc */}
+          <div style={{background:phaseInfo.bg,border:`1px solid ${phaseInfo.color}33`,borderRadius:6,padding:"10px 14px",marginBottom:16}}>
+            <div style={{color:phaseInfo.color,fontSize:10,letterSpacing:2,marginBottom:6}}>ROUND {rd.r} — {phaseInfo.label.toUpperCase()}</div>
+            <div style={{color:"#cbd5e1",fontSize:11,lineHeight:1.7}}>{rd.desc}</div>
+          </div>
+
+          {/* NIIP chart */}
+          <div style={{marginBottom:16}}>
+            <div style={{color:"#64748b",fontSize:10,letterSpacing:2,marginBottom:8}}>AMERCO NIIP vs TIC REPORTED ($B)</div>
+            <div style={{overflowX:"auto"}}><NIIPChart rounds={ROUNDS} currentR={rd.r}/></div>
+          </div>
+
+          {/* Holdings composition */}
+          <div style={{marginBottom:16}}>
+            <div style={{color:"#64748b",fontSize:10,letterSpacing:2,marginBottom:10}}>FOREIGN DOLLAR HOLDINGS — COMPOSITION</div>
+            <StackedBar round={rd}/>
+          </div>
+
+          {/* Key metrics */}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:16}}>
+            {[
+              {label:"AmeriCo NIIP",value:rd.niip,color:"#ef4444"},
+              {label:"TIC reported",value:-rd.tic_total,color:"#3b82f6"},
+              {label:"TIC gap",value:-rd.tic_gap,color:rd.tic_gap>0?"#f59e0b":"#22c55e"},
+            ].map(m=>(
+              <div key={m.label} style={{background:"#0d1424",border:"1px solid #1e293b",borderRadius:6,padding:"8px 10px",textAlign:"center"}}>
+                <div style={{color:"#475569",fontSize:9,marginBottom:3}}>{m.label}</div>
+                <div style={{color:m.color,fontSize:15,fontWeight:700}}>{fmtB(m.value)}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* SDDD gauges */}
+          <div style={{marginBottom:12}}>
+            <div style={{color:"#64748b",fontSize:10,letterSpacing:2,marginBottom:10}}>SDDD / VENUGOPAL FRAMEWORK</div>
+            <Meter label="BoJ direct reserves" value={rd.boj_direct} min={0} max={450} color="#22c55e"/>
+            <Meter label="SDDD floor (essential commodity pipeline)" value={rd.sddd_floor} min={0} max={100} color="#f59e0b"/>
+            <Meter label={`Buffer above SDDD floor (${rd.zone==="III"?"CLIFF":rd.zone==="II"?"ZONE II":"SAFE"})`}
+              value={Math.max(0,buffer)} min={0} max={350} color={bufferColor}/>
+            <Meter label="Theta* (Point of No Return)" value={rd.theta_star} min={0} max={100} color="#8b5cf6"/>
+          </div>
+
+          {/* Zone indicator */}
+          <div style={{padding:"8px 12px",background:rd.zone==="III"?"#1a0000":rd.zone==="II"?"#1c0a00":"#0a1a0a",
+            border:`1px solid ${rd.zone==="III"?"#7f1d1d":rd.zone==="II"?"#92400e":"#14532d"}`,
+            borderRadius:6,display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+            <span style={{color:"#64748b",fontSize:10}}>IMF standard (3-month cover)</span>
+            <span style={{color:"#22c55e",fontSize:12,fontWeight:700}}>
+              {(rd.boj_total/(rd.sddd_floor*4/3)).toFixed(1)}x — LOOKS ADEQUATE
+            </span>
+            <PhaseTag zone={rd.zone}/>
+          </div>
+          {rd.zone==="III" && (
+            <div style={{padding:"6px 12px",background:"#1a0000",border:"1px solid #dc2626",
+              borderRadius:6,color:"#fca5a5",fontSize:10,textAlign:"center",marginBottom:8}}>
+              ⚠ CLIFF CROSSED — LC CAPACITY ZERO — STANDARD METRICS BLIND TO THIS
+            </div>
+          )}
+
+          {/* COFER-SWIFT panel */}
+          {rd.cofer_analog!==undefined && (
+            <div style={{background:"#0d1424",border:"1px solid #f59e0b44",borderRadius:6,padding:12,marginBottom:8}}>
+              <div style={{color:"#f59e0b",fontSize:10,letterSpacing:2,marginBottom:10}}>THE COFER-SWIFT DIVERGENCE</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+                <div style={{textAlign:"center",background:"#080d18",borderRadius:4,padding:8}}>
+                  <div style={{color:"#64748b",fontSize:9,marginBottom:4}}>COFER ANALOG</div>
+                  <div style={{color:"#ef4444",fontSize:22,fontWeight:700}}>{rd.cofer_analog}%</div>
+                  <div style={{color:"#475569",fontSize:9}}>BoJ dollar / total assets</div>
+                  <div style={{color:"#ef4444",fontSize:9,marginTop:2}}>↓ FALLING (IDD diversifying)</div>
+                </div>
+                <div style={{textAlign:"center",background:"#080d18",borderRadius:4,padding:8}}>
+                  <div style={{color:"#64748b",fontSize:9,marginBottom:4}}>SWIFT ANALOG</div>
+                  <div style={{color:"#22c55e",fontSize:22,fontWeight:700}}>{rd.swift_analog}%</div>
+                  <div style={{color:"#475569",fontSize:9}}>dollar share of oil LCs</div>
+                  <div style={{color:"#22c55e",fontSize:9,marginTop:2}}>→ FLAT (SDDD structural floor)</div>
+                </div>
+              </div>
+              <div style={{color:"#94a3b8",fontSize:10,lineHeight:1.6,borderTop:"1px solid #1e293b",paddingTop:8}}>
+                Same BoJ. Same oil trade. COFER measures IDD — the investment portfolio that can be diversified.
+                SWIFT measures SDDD — the operational necessity that cannot. The divergence is the decomposition made visible.
+              </div>
+              <div style={{marginTop:8,display:"flex",justifyContent:"space-between"}}>
+                <div style={{textAlign:"center"}}><div style={{color:"#64748b",fontSize:9}}>BoJ dollar assets</div><div style={{color:"#3b82f6",fontSize:13,fontWeight:700}}>${rd.boj_total_dollar}</div></div>
+                <div style={{textAlign:"center"}}><div style={{color:"#64748b",fontSize:9}}>FranceCo bonds (non-$)</div><div style={{color:"#f97316",fontSize:13,fontWeight:700}}>${rd.boj_franceco_bonds}</div></div>
+                <div style={{textAlign:"center"}}><div style={{color:"#64748b",fontSize:9}}>SDDD floor ($ locked)</div><div style={{color:"#f59e0b",fontSize:13,fontWeight:700}}>${rd.sddd_floor}</div></div>
+                <div style={{textAlign:"center"}}><div style={{color:"#64748b",fontSize:9}}>Divergence gap</div><div style={{color:"#ef4444",fontSize:13,fontWeight:700}}>{rd.swift_analog-rd.cofer_analog}pp</div></div>
+              </div>
+            </div>
+          )}
+
+          {/* FedCo / Hard Threshold panel */}
+          {rd.fedco_balance!==undefined && (
+            <div style={{background:"#0d0505",border:"1px solid #7f1d1d",borderRadius:6,padding:12,marginBottom:8}}>
+              <div style={{color:"#fca5a5",fontSize:10,letterSpacing:2,marginBottom:10}}>THE HARD THRESHOLD — PRODUCTIVE CAPACITY CONSTRAINT</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:10}}>
+                <div style={{textAlign:"center",background:"#080d18",borderRadius:4,padding:8}}>
+                  <div style={{color:"#64748b",fontSize:9,marginBottom:4}}>FedCo balance sheet</div>
+                  <div style={{color:"#fca5a5",fontSize:18,fontWeight:700}}>${rd.fedco_balance}</div>
+                  <div style={{color:"#475569",fontSize:9}}>23% of Y_AmeriCo</div>
+                </div>
+                <div style={{textAlign:"center",background:"#080d18",borderRadius:4,padding:8}}>
+                  <div style={{color:"#64748b",fontSize:9,marginBottom:4}}>Y_JapanCo (output)</div>
+                  <div style={{color:"#ef4444",fontSize:18,fontWeight:700}}>${rd.japanco_output}</div>
+                  <div style={{color:"#ef4444",fontSize:9}}>↓ -30% (oil cutoff)</div>
+                </div>
+                <div style={{textAlign:"center",background:"#080d18",borderRadius:4,padding:8}}>
+                  <div style={{color:"#64748b",fontSize:9,marginBottom:4}}>Toy world κ</div>
+                  <div style={{color:"#fca5a5",fontSize:18,fontWeight:700}}>{rd.toy_kappa}x</div>
+                  <div style={{color:"#475569",fontSize:9}}>claims / output</div>
+                </div>
+              </div>
+              <div style={{color:"#94a3b8",fontSize:10,lineHeight:1.6,borderTop:"1px solid #7f1d1d44",paddingTop:8}}>
+                FedCo can always create dollars. The constraint is not nominal. The constraint is real:
+                each dollar FedCo creates is a claim on a productive base that is simultaneously shrinking.
+                This is not where the system breaks. This is where the cure starts becoming the disease.
+              </div>
+            </div>
+          )}
+
+          {/* Scissors panel */}
+          {rd.replenishment_rate!==undefined && (
+            <div style={{padding:"6px 10px",borderRadius:4,fontSize:9,lineHeight:1.6,marginBottom:8,
+              background:rd.boj_liquidating?"#1a0000":"#1c1400",
+              border:`1px solid ${rd.boj_liquidating?"#7f1d1d":"#92400e"}`,
+              color:rd.boj_liquidating?"#fca5a5":"#fbbf24"}}>
+              {rd.boj_liquidating
+                ? "⚠ BoJ now a Treasury SELLER. FX intervention drains boj_direct to cover energy LCs. AmeriCo loses a sovereign buyer and gains a sovereign seller simultaneously. The tariff aimed at reducing the deficit degrades the stability of financing for that deficit."
+                : `Double compression in progress. Scissors does not require an outright dollar deficit to cause a crisis -- it requires the replenishment rate to fall below what is needed to maintain the buffer above a rising floor. BoJ accumulating $${rd.net_surplus}/round (down from $${rd.replenishment_pre}) while floor rose $${rd.floor_shift} to $${rd.sddd_floor}.`
+              }
+            </div>
+          )}
+
+        </div>
+
+        {/* RIGHT */}
+        <div style={{padding:16,overflowY:"auto"}}>
+
+          {/* Flows */}
+          <div style={{marginBottom:16}}>
+            <div style={{color:"#64748b",fontSize:10,letterSpacing:2,marginBottom:10}}>DOLLAR FLOWS THIS ROUND</div>
+            <div style={{background:"#0d1424",border:"1px solid #1e293b",borderRadius:6,padding:12,minHeight:140}}>
+              {rd.flows.map((f,i)=><FlowItem key={i} flow={f}/>)}
+            </div>
+            <div style={{display:"flex",gap:10,marginTop:8,flexWrap:"wrap"}}>
+              {[
+                {color:"#22c55e",label:"Direct (Path 1)"},
+                {color:"#3b82f6",label:"GlobalBankCo (Path 3)"},
+                {color:"#8b5cf6",label:"HedgeCo basis trade (Path 4)"},
+                {color:"#f97316",label:"EuroCustodyCo (Path 2)"},
+                {color:"#6b7280",label:"Bilateral/AfricaCo (Path 5)"},
+                {color:"#ef4444",label:"Depletion/stress"},
+              ].map(l=>(
+                <div key={l.label} style={{display:"flex",alignItems:"center",gap:4}}>
+                  <div style={{width:10,height:3,background:l.color,borderRadius:2}}/>
+                  <span style={{color:"#64748b",fontSize:9}}>{l.label}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* TIC mechanism -- R7 */}
+          {rd.showTicMechanism && (
+            <div style={{marginBottom:16,background:"#0d0818",border:"1px solid #8b5cf644",borderRadius:6,padding:12}}>
+              <div style={{color:"#8b5cf6",fontSize:10,letterSpacing:2,marginBottom:10}}>HOW THE TIC CHAIN BREAKS — STEP BY STEP</div>
+              {[
+                {step:"1",text:"OilCo places $16 equity with HedgeCo (Cayman).",tic:"TIC: $0 — equity placement not a securities holding",color:"#8b5cf6",flag:false},
+                {step:"2",text:"HedgeCo buys $16 T-bills at NY Fed. Custodian sees: Cayman entity holds $16.",tic:"TIC: Cayman $16 ← should appear here",color:"#22c55e",flag:false},
+                {step:"3",text:"HedgeCo pledges $16 T-bills to RepoDesk as collateral. T-bills physically transfer to RepoDesk custody (US entity).",tic:"TIC BREAK: custodian sees US entity holds T-bills. Stops reporting as foreign.",color:"#ef4444",flag:true},
+                {step:"4",text:"HedgeCo receives $16 cash. Buys another $16 T-bills.",tic:"TIC: $0 — second batch also pledged as collateral",color:"#f59e0b",flag:false},
+                {step:"5",text:"FICC novates the sponsored repo. Records as guarantee not direct transaction.",tic:"TIC FINAL: Cayman = $0. HedgeCo holds $32. External claim = $16. All invisible.",color:"#ef4444",flag:true},
+              ].map(s=>(
+                <div key={s.step} style={{display:"flex",gap:10,marginBottom:8,padding:"6px 8px",
+                  background:s.flag?"#1a0a0a":"#0d1424",borderLeft:`2px solid ${s.color}`,borderRadius:"0 4px 4px 0"}}>
+                  <div style={{color:s.color,fontSize:11,fontFamily:"monospace",fontWeight:700,minWidth:16}}>{s.step}</div>
+                  <div style={{flex:1}}>
+                    <div style={{color:"#cbd5e1",fontSize:10,marginBottom:2}}>{s.text}</div>
+                    <div style={{color:s.flag?"#fca5a5":"#475569",fontSize:9,fontFamily:"monospace"}}>{s.flag?"⚠ ":""}{s.tic}</div>
+                  </div>
+                </div>
+              ))}
+              <div style={{marginTop:8,padding:"6px 10px",background:"#1a0a0a",border:"1px solid #7f1d1d",
+                borderRadius:4,color:"#fca5a5",fontSize:9,lineHeight:1.5}}>
+                Source: Barth, Beltran et al. (Fed FEDS Note, Oct 2025) -- Cayman hedge funds undercounted in TIC by ~$1.4T as of end-2024.
+              </div>
+            </div>
+          )}
+
+          {/* Fed visibility panel */}
+          <div style={{marginBottom:16,background:"#080d18",
+            border:`1px solid ${rd.tic_gap>0?"#f59e0b44":"#1e293b"}`,borderRadius:6,padding:12}}>
+            <div style={{color:"#64748b",fontSize:10,letterSpacing:2,marginBottom:8}}>WHAT THE FED CAN SEE vs REALITY</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
+              <div style={{background:"#0d1424",borderRadius:4,padding:8}}>
+                <div style={{color:"#22c55e",fontSize:9,marginBottom:4}}>FED SEES (TIC data)</div>
+                {[
+                  {label:"Total foreign demand",value:`$${rd.tic_total}B`},
+                  {label:"Cayman holdings",value:`$${rd.r>=7?423:0}B (stated)`},
+                  {label:"Basis trade exposure",value:rd.tic_gap>0?"NOT VISIBLE":"$0"},
+                ].map(item=>(
+                  <div key={item.label} style={{display:"flex",justifyContent:"space-between",marginBottom:2}}>
+                    <span style={{color:"#475569",fontSize:9}}>{item.label}</span>
+                    <span style={{color:item.value==="NOT VISIBLE"?"#ef4444":"#94a3b8",fontSize:9,fontFamily:"monospace"}}>{item.value}</span>
+                  </div>
+                ))}
+              </div>
+              <div style={{background:"#0d1424",borderRadius:4,padding:8}}>
+                <div style={{color:"#ef4444",fontSize:9,marginBottom:4}}>REALITY</div>
+                {[
+                  {label:"True external liabilities",value:`$${Math.abs(rd.niip)}B`},
+                  {label:"HedgeCo actual holdings",value:`$${rd.hedgeco_tbills}B`,warn:rd.hedgeco_tbills>0},
+                  {label:"TIC gap (invisible)",value:`$${rd.tic_gap}B`,warn:rd.tic_gap>0},
+                ].map(item=>(
+                  <div key={item.label} style={{display:"flex",justifyContent:"space-between",marginBottom:2}}>
+                    <span style={{color:"#475569",fontSize:9}}>{item.label}</span>
+                    <span style={{color:item.warn?"#f59e0b":"#94a3b8",fontSize:9,fontFamily:"monospace",fontWeight:item.warn?700:400}}>{item.value}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            {rd.tic_gap>0 && (
+              <div style={{padding:"5px 10px",borderRadius:4,
+                background:rd.r===16?"#0a0505":"#0d1000",
+                border:`1px solid ${rd.r===16?"#7f1d1d":"#365314"}`,
+                color:rd.r===16?"#fca5a5":"#86efac",fontSize:9,lineHeight:1.5}}>
+                {rd.r===16
+                  ? `⚠ UNWIND IN PROGRESS: HedgeCo sold $32. FedCo absorbed. Balance sheet expanded $70 (23% of Y_AmeriCo). Toy κ=${rd.toy_kappa||"n/a"}. The Fed absorbed the crisis it could not see building.`
+                  : `Invisible exposure: $${rd.tic_gap}B. If stress forces HedgeCo unwind, Fed must absorb $${rd.hedgeco_tbills}B with no advance warning. Real-world equivalent: $1.4T invisible, $1.85T unwind exposure.`
+                }
+              </div>
+            )}
+          </div>
+
+          {/* Balance sheets */}
+          <div>
+            <div style={{color:"#64748b",fontSize:10,letterSpacing:2,marginBottom:10}}>BALANCE SHEETS — END OF ROUND {rd.r}</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+              <div style={{background:"#0d1424",border:"1px solid #1e293b",borderRadius:6,padding:10}}>
+                <div style={{color:"#22c55e",fontSize:10,marginBottom:8,letterSpacing:1}}>BOJ (JapanCo CB)</div>
+                <BalanceRow label="Direct T-bills (NY Fed)" value={rd.boj_direct} color="#22c55e" highlight/>
+                <BalanceRow label="SDDD floor (locked)" value={-rd.sddd_floor} color="#f59e0b" indent/>
+                <BalanceRow label="IDD free" value={rd.boj_direct-rd.sddd_floor} color="#22c55e" indent/>
+                <BalanceRow label="Via GlobalBankCo" value={rd.boj_globalbank} color="#3b82f6"/>
+                <BalanceRow label="Via EuroCustodyCo" value={rd.boj_eurocustody} color="#f97316"/>
+                <div style={{borderTop:"1px solid #1e293b",marginTop:6,paddingTop:6}}>
+                  <BalanceRow label="TOTAL" value={rd.boj_total} color="#f8fafc" highlight/>
+                </div>
+                <div style={{marginTop:4,color:"#475569",fontSize:9}}>
+                  TIC: ${rd.boj_direct} (Japan) + ${rd.boj_globalbank} (UK) + ${rd.boj_eurocustody} (Belgium)
+                </div>
+              </div>
+              <div style={{background:"#0d1424",border:"1px solid #1e293b",borderRadius:6,padding:10}}>
+                <div style={{color:"#fbbf24",fontSize:10,marginBottom:8,letterSpacing:1}}>OILCO</div>
+                <BalanceRow label="Direct T-bills" value={rd.oilco_direct} color="#fbbf24" highlight/>
+                <BalanceRow label="HedgeCo equity (NAV)" value={rd.oilco_hedgeco} color="#8b5cf6"/>
+                <BalanceRow label="AfricaCo loan" value={rd.oilco_africaco} color="#6b7280"/>
+                <div style={{borderTop:"1px solid #1e293b",marginTop:6,paddingTop:6}}>
+                  <BalanceRow label="TOTAL" value={rd.oilco_direct+rd.oilco_hedgeco+rd.oilco_africaco} color="#f8fafc" highlight/>
+                </div>
+                <div style={{marginTop:4,color:"#475569",fontSize:9}}>TIC visible: ${rd.oilco_direct} only.</div>
+              </div>
+              <div style={{background:"#0d1424",border:"1px solid #1e293b",borderRadius:6,padding:10}}>
+                <div style={{color:"#8b5cf6",fontSize:10,marginBottom:8,letterSpacing:1}}>HEDGECO (Cayman)</div>
+                <BalanceRow label="T-bills (basis trade)" value={rd.hedgeco_tbills} color="#8b5cf6" highlight/>
+                <BalanceRow label="Repo liability" value={-rd.hedgeco_repo} color="#ef4444"/>
+                <div style={{borderTop:"1px solid #1e293b",marginTop:6,paddingTop:6}}>
+                  <BalanceRow label="NAV (= OilCo equity)" value={rd.hedgeco_tbills-rd.hedgeco_repo} color="#f8fafc" highlight/>
+                </div>
+                <div style={{marginTop:4,color:"#ef4444",fontSize:9}}>TIC: $0 — repo collateral transfer breaks chain</div>
+              </div>
+              <div style={{background:"#0d1424",border:"1px solid #1e293b",borderRadius:6,padding:10}}>
+                <div style={{color:"#3b82f6",fontSize:10,marginBottom:8,letterSpacing:1}}>INTERMEDIARIES</div>
+                <BalanceRow label="GlobalBankCo T-bills" value={rd.globalbank_tbills} color="#3b82f6" highlight/>
+                <BalanceRow label="Deposit owed to BoJ" value={-rd.globalbank_tbills} color="#ef4444" indent/>
+                <BalanceRow label="EuroCustodyCo (custodial)" value={rd.eurocustody_tbills} color="#f97316" highlight/>
+                <BalanceRow label="Beneficial owner: BoJ" value={-rd.eurocustody_tbills} color="#f97316" indent/>
+                <div style={{marginTop:6,color:"#475569",fontSize:9}}>TIC: GlobalBankCo→UK | EuroCustodyCo→Belgium</div>
+              </div>
+            </div>
+
+            {/* AmeriCo summary */}
+            <div style={{marginTop:8,background:"#0d1424",border:"1px solid #ef444433",borderRadius:6,padding:10}}>
+              <div style={{color:"#ef4444",fontSize:10,marginBottom:8,letterSpacing:1}}>AMERCO — EXTERNAL LIABILITIES (NIIP)</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+                <div style={{textAlign:"center"}}>
+                  <div style={{color:"#64748b",fontSize:9,marginBottom:2}}>TRUE NIIP</div>
+                  <div style={{color:"#ef4444",fontSize:16,fontWeight:700}}>{fmtB(rd.niip)}</div>
+                </div>
+                <div style={{textAlign:"center"}}>
+                  <div style={{color:"#64748b",fontSize:9,marginBottom:2}}>TIC REPORTED</div>
+                  <div style={{color:"#3b82f6",fontSize:16,fontWeight:700}}>-{fmtB(rd.tic_total)}</div>
+                </div>
+                <div style={{textAlign:"center"}}>
+                  <div style={{color:"#64748b",fontSize:9,marginBottom:2}}>INVISIBLE STOCK</div>
+                  <div style={{color:rd.tic_gap>0?"#f59e0b":"#22c55e",fontSize:16,fontWeight:700}}>
+                    {rd.tic_gap>0?`-$${rd.tic_gap}B`:"$0"}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      {/* Footer */}
+      <div style={{borderTop:"1px solid #1e293b",padding:"8px 20px",display:"flex",
+        justifyContent:"space-between",alignItems:"center",background:"#080d18",flexWrap:"wrap",gap:4}}>
+        <div style={{color:"#334155",fontSize:9}}>
+          SDDD: Venugopal (2026) "The Dollar Conveyor" v4.0 · TIC gap: Barth & Beltran et al., Fed FEDS Note, Oct 2025
+        </div>
+        <div style={{color:"#334155",fontSize:9}}>Toy model for The Stock Elephant Part II · @Vinodh_Rag</div>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.render(<App/>, document.getElementById('root'));
+</script>
+</body>
+</html>
