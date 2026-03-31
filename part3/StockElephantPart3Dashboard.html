@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>The Stock Elephant — Part III</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    html,body{background:#0a0e1a;color:#e2e8f0;font-family:system-ui,sans-serif;font-size:13px;min-height:100vh}
+    input[type=range]{accent-color:#3b82f6;width:100%;cursor:pointer}
+    button{cursor:pointer;font-family:inherit}
+    svg{overflow:visible;display:block}
+  </style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+var C={bg:"#0a0e1a",panel:"#0f1629",border:"#1e2d4a",text:"#e2e8f0",muted:"#64748b",
+  accent:"#3b82f6",green:"#22c55e",amber:"#f59e0b",red:"#ef4444",
+  orange:"#f97316",purple:"#8b5cf6",teal:"#14b8a6",gold:"#fbbf24"};
+
+var GAUGE={
+  DCR: {vals:[0.400,0.461,0.541,0.601,0.635,0.641,0.615,0.534,0.503,0.492,0.508],dir:"up", warn:0.55,crit:0.65,color:"#14b8a6",label:"DCR", desc:"Stable funding behind repo"},
+  CLC: {vals:[1.692,1.731,1.762,1.783,1.724,1.791,1.852,1.894,1.938,1.957,1.198],dir:"down",warn:1.40,crit:1.20,color:"#22c55e",label:"CLC", desc:"CommodityCo buffer"},
+  CV:  {vals:[1.33,1.43,1.54,1.67,2.00,2.22,3.33,3.57,4.00,4.17,4.17],          dir:"up", warn:2.50,crit:3.50,color:"#f97316",label:"CV",  desc:"Collateral reuse"},
+  TVR: {vals:[0.750,0.700,0.650,0.600,0.500,0.450,0.300,0.275,0.250,0.237,0.237],dir:"down",warn:0.45,crit:0.30,color:"#8b5cf6",label:"TVR", desc:"Chain visible to TIC"},
+  BTAR:{vals:[0.311,0.373,0.447,0.532,0.727,0.727,0.752,0.762,0.792,0.821,0.881],dir:"up", warn:0.60,crit:0.80,color:"#ef4444",label:"BTAR",desc:"FedCo capacity consumed"},
+  kappa:{vals:[1.071,1.080,1.107,1.132,1.150,1.150,1.189,1.214,1.250,1.308,1.333],dir:"up",warn:1.15,crit:1.25,color:"#fbbf24",label:"\u03ba",   desc:"Claims vs productive base"}
+};
+
+var JAPCBCO=[650,651,652,653,655,656,658,661,663,665,668];
+var GBC_DEP= [40,59,91,127,168,214,288,344,399,470,547];
+var HEDGECO= [230,289,387,508,615,763,1080,1408,1839,2253,2488];
+
+var RATCHET=[
+  {id:"S1",label:"Price Shock",  abs:1601,pre:89.7, post:155.2,resid:118.7,color:"#ef4444"},
+  {id:"S2",label:"Funding Shock",abs:398, pre:118.7,post:133.9,resid:124.8,color:"#f97316"},
+  {id:"S3",label:"Infra Shock",  abs:712, pre:124.8,post:211.5,resid:168.1,color:"#dc2626"}
+];
+
+var yr=0, playing=false, timer=null, activeEp=null;
+
+function slvl(key,v){var g=GAUGE[key];return g.dir==="up"?(v>=g.crit?"crit":v>=g.warn?"warn":"ok"):(v<=g.crit?"crit":v<=g.warn?"warn":"ok");}
+function sc(l){return l==="crit"?C.red:l==="warn"?C.amber:C.green;}
+
+function spark(vals,color,y,W,H){
+  var mn=Math.min.apply(null,vals),mx=Math.max.apply(null,vals),rng=mx-mn||1;
+  function px(i){return (i/10)*W;}
+  function py(v){return H-((v-mn)/rng)*(H-5)-2;}
+  var all=vals.map(function(v,i){return px(i)+","+py(v);}).join(" ");
+  var part=vals.slice(0,y+1).map(function(v,i){return px(i)+","+py(v);}).join(" ");
+  return '<svg width="'+W+'" height="'+H+'">'+
+    '<polyline points="'+all+'" fill="none" stroke="'+color+'" stroke-width="1" opacity="0.2"/>'+
+    (y>=1?'<polyline points="'+part+'" fill="none" stroke="'+color+'" stroke-width="2"/>'
+         :'<circle cx="'+px(0)+'" cy="'+py(vals[0])+'" r="3" fill="'+color+'"/>') +
+    '<circle cx="'+px(y)+'" cy="'+py(vals[y])+'" r="4" fill="'+color+'"/>'+
+    '</svg>';
+}
+
+function gaugeCard(key){
+  var g=GAUGE[key],v=g.vals[yr],lvl=slvl(key,v),col=sc(lvl);
+  var disp=(key==="TVR"||key==="BTAR")?(v*100).toFixed(1)+"%":v.toFixed(2);
+  return '<div style="background:'+C.panel+';border:1px solid '+(lvl==="crit"?col+"55":C.border)+';border-radius:8px;padding:9px 11px;display:flex;flex-direction:column;gap:3px;">'+
+    '<div style="display:flex;justify-content:space-between;align-items:flex-start;">'+
+      '<div>'+
+        '<div style="font-size:11px;color:'+C.muted+';font-family:monospace;font-weight:600;">'+g.label+'</div>'+
+        '<div style="font-size:9px;color:'+C.muted+';">'+g.desc+'</div>'+
+      '</div>'+
+      '<div style="font-size:17px;font-weight:700;color:'+col+';font-family:monospace;">'+disp+'</div>'+
+    '</div>'+
+    spark(g.vals,g.color,yr,148,28)+
+    '<div style="font-size:8px;color:'+col+';text-align:right;font-family:monospace;">'+(lvl==="crit"?"&#9650; STRESS":lvl==="warn"?"&#9670; WATCH":"&#9679; STABLE")+'</div>'+
+  '</div>';
+}
+
+function stressBanner(){
+  var keys=Object.keys(GAUGE);
+  var crit=keys.filter(function(k){return slvl(k,GAUGE[k].vals[yr])==="crit";}).length;
+  var warn=keys.filter(function(k){return slvl(k,GAUGE[k].vals[yr])==="warn";}).length;
+  var label=crit>=3?"SYSTEM STRESS":crit>=1?"PRESSURE BUILDING":warn>=2?"WATCH":"STABLE";
+  var col=crit>=3?C.red:crit>=1?C.orange:warn>=2?C.amber:C.green;
+  return '<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 10px;background:'+col+'18;border:1px solid '+col+'35;border-radius:6px;margin-bottom:7px;">'+
+    '<span style="font-size:10px;font-family:monospace;color:'+col+';font-weight:700;">'+label+'</span>'+
+    '<span style="font-size:9px;color:'+C.muted+';font-family:monospace;">'+crit+' critical &nbsp;&middot;&nbsp; '+warn+' warning &nbsp;&middot;&nbsp; '+(6-crit-warn)+' stable</span>'+
+  '</div>';
+}
+
+function stockSVG(){
+  var W=300,H=160,pl=46,pr=12,pt=14,pb=28,cw=W-pl-pr,ch=H-pt-pb,maxH=2600;
+  function px(i){return pl+(i/10)*cw;}
+  function py_h(v){return pt+ch-(v/maxH)*ch;}
+  function py_r(v){return pt+ch-((v-600)/120)*(ch*0.25)-ch*0.68;}
+  function py_d(v){return pt+ch-(v/600)*ch*0.42-ch*0.02;}
+  var hGhost=HEDGECO.map(function(v,i){return px(i)+","+py_h(v);}).join(" ");
+  var hPart=HEDGECO.slice(0,yr+1).map(function(v,i){return px(i)+","+py_h(v);}).join(" ");
+  var hArea="M "+px(0)+" "+(pt+ch)+" "+HEDGECO.slice(0,yr+1).map(function(v,i){return "L "+px(i)+" "+py_h(v);}).join(" ")+" L "+px(yr)+" "+(pt+ch)+" Z";
+  var rPart=JAPCBCO.slice(0,yr+1).map(function(v,i){return px(i)+","+py_r(v);}).join(" ");
+  var dPart=GBC_DEP.slice(0,yr+1).map(function(v,i){return px(i)+","+py_d(v);}).join(" ");
+  var ticks=[0,500,1000,1500,2000];
+  var out='<svg width="'+W+'" height="'+H+'">';
+  ticks.forEach(function(t){
+    out+='<line x1="'+pl+'" x2="'+(pl+cw)+'" y1="'+py_h(t)+'" y2="'+py_h(t)+'" stroke="'+C.border+'" stroke-width="0.5" stroke-dasharray="3,3"/>';
+    out+='<text x="'+(pl-3)+'" y="'+(py_h(t)+4)+'" fill="'+C.muted+'" font-size="8" text-anchor="end" font-family="monospace">$'+t+'B</text>';
+  });
+  [0,2,4,6,8,10].forEach(function(i){
+    out+='<text x="'+px(i)+'" y="'+(H-8)+'" fill="'+C.muted+'" font-size="8" text-anchor="middle" font-family="monospace">Y'+i+'</text>';
+  });
+  out+='<polyline points="'+hGhost+'" fill="none" stroke="'+C.accent+'" stroke-width="1" opacity="0.12" stroke-dasharray="4,4"/>';
+  out+='<path d="'+hArea+'" fill="'+C.accent+'" opacity="0.15"/>';
+  out+=(yr>=1?'<polyline points="'+hPart+'" fill="none" stroke="'+C.accent+'" stroke-width="2.5"/>'
+             :'<circle cx="'+px(0)+'" cy="'+py_h(HEDGECO[0])+'" r="3" fill="'+C.accent+'"/>');
+  out+=(yr>=1?'<polyline points="'+rPart+'" fill="none" stroke="'+C.teal+'" stroke-width="1.5" stroke-dasharray="5,3"/>'
+             :'<circle cx="'+px(0)+'" cy="'+py_r(JAPCBCO[0])+'" r="3" fill="'+C.teal+'"/>');
+  out+=(yr>=1?'<polyline points="'+dPart+'" fill="none" stroke="'+C.amber+'" stroke-width="2" stroke-dasharray="2,2"/>'
+             :'<circle cx="'+px(0)+'" cy="'+py_d(GBC_DEP[0])+'" r="3" fill="'+C.amber+'"/>');
+  out+='<circle cx="'+px(yr)+'" cy="'+py_h(HEDGECO[yr])+'" r="4" fill="'+C.accent+'"/>';
+  out+='<text x="'+(px(yr)+6)+'" y="'+(py_h(HEDGECO[yr])+4)+'" fill="'+C.accent+'" font-size="9" font-family="monospace" font-weight="bold">$'+HEDGECO[yr]+'B</text>';
+  out+='<text x="'+(pl+4)+'" y="'+(pt+11)+'" fill="'+C.accent+'" font-size="8" font-family="monospace">HedgeCo gross \u2191</text>';
+  out+='<text x="'+(pl+4)+'" y="'+(pt+22)+'" fill="'+C.amber+'" font-size="8" font-family="monospace">JapanCo\u2192GBC deposits - -</text>';
+  out+='<text x="'+(pl+4)+'" y="'+(pt+33)+'" fill="'+C.teal+'" font-size="8" font-family="monospace">JapCBCo reserves \u00b7\u00b7\u00b7</text>';
+  out+='</svg>';
+  return out;
+}
+
+function ratchetSVG(){
+  var W=300,H=160,pl=44,pr=12,pt=18,pb=28,cw=W-pl-pr,ch=H-pt-pb,maxB=220;
+  function yb(v){return pt+ch-(v/maxB)*ch;}
+  var ticks=[0,50,100,150,200];
+  var residPts=RATCHET.map(function(r,i){var bw=cw/3-8;return (pl+i*(cw/3)+4+bw*0.25)+","+yb(r.resid);}).join(" ");
+  var out='<svg width="'+W+'" height="'+H+'">';
+  ticks.forEach(function(t){
+    out+='<line x1="'+pl+'" x2="'+(pl+cw)+'" y1="'+yb(t)+'" y2="'+yb(t)+'" stroke="'+(t===100?C.red+"45":C.border)+'" stroke-width="'+(t===100?1:0.5)+'" stroke-dasharray="3,3"/>';
+    out+='<text x="'+(pl-3)+'" y="'+(yb(t)+4)+'" fill="'+(t===100?C.red:C.muted)+'" font-size="8" text-anchor="end" font-family="monospace">'+t+'%</text>';
+  });
+  out+='<text x="'+(pl+3)+'" y="'+(yb(100)-4)+'" fill="'+C.red+'" font-size="7" font-family="monospace" opacity="0.6">capacity ceiling</text>';
+  RATCHET.forEach(function(r,i){
+    var bw=cw/3-8,x0=pl+i*(cw/3),op=(activeEp===null||activeEp===i)?1:0.22;
+    var yp=yb(r.pre),ypo=yb(r.post),yr2=yb(r.resid);
+    out+='<g opacity="'+op+'">';
+    out+='<rect x="'+(x0+4)+'" y="'+yp+'" width="'+(bw*0.38)+'" height="'+(pt+ch-yp)+'" fill="'+r.color+'" opacity="0.28" rx="2"/>';
+    out+='<rect x="'+(x0+4+bw*0.44)+'" y="'+ypo+'" width="'+(bw*0.38)+'" height="'+(pt+ch-ypo)+'" fill="'+r.color+'" opacity="0.7" rx="2"/>';
+    out+='<circle cx="'+(x0+4+bw*0.23)+'" cy="'+yr2+'" r="4" fill="'+r.color+'" stroke="'+C.bg+'" stroke-width="1.5"/>';
+    out+='<text x="'+(x0+5)+'" y="'+(yp-3)+'" fill="'+r.color+'" font-size="7" font-family="monospace">'+r.pre.toFixed(0)+'%</text>';
+    out+='<text x="'+(x0+5+bw*0.44)+'" y="'+(ypo-3)+'" fill="'+r.color+'" font-size="7" font-family="monospace" font-weight="bold">'+r.post.toFixed(0)+'%</text>';
+    out+='<text x="'+(x0+4+bw*0.5)+'" y="'+(H-10)+'" fill="'+r.color+'" font-size="7" text-anchor="middle" font-family="monospace">'+r.id+'</text>';
+    out+='<text x="'+(x0+4+bw*0.5)+'" y="'+(H-2)+'" fill="'+C.muted+'" font-size="6" text-anchor="middle" font-family="monospace">'+r.label+'</text>';
+    out+='</g>';
+  });
+  out+='<polyline points="'+residPts+'" fill="none" stroke="'+C.amber+'" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.75"/>';
+  out+='<text x="'+(pl+4)+'" y="'+(pt+9)+'" fill="'+C.amber+'" font-size="7" font-family="monospace">\u2014 residual BTAR ratchets up</text>';
+  out+='</svg>';
+  return out;
+}
+
+function render(){
+  var stressYr=yr===10;
+  var html='<div style="background:'+C.bg+';color:'+C.text+';min-height:100vh;display:flex;flex-direction:column;">';
+
+  // Header
+  html+='<div style="padding:12px 16px 8px;border-bottom:1px solid '+C.border+';display:flex;justify-content:space-between;align-items:flex-end;">';
+  html+='<div><div style="font-size:9px;color:'+C.muted+';font-family:monospace;letter-spacing:2px;">THE STOCK ELEPHANT &middot; PART III &middot; TOY MODEL</div>';
+  html+='<div style="font-size:16px;font-weight:700;margin-top:2px;">Stock &rarr; Pressure &rarr; Response</div>';
+  html+='<div style="font-size:9px;color:'+C.muted+';margin-top:1px;">Nine actors &middot; Eleven SFC identities &middot; Years 0&ndash;10+</div></div>';
+  html+='<div style="font-size:9px;color:'+C.muted+';font-family:monospace;text-align:right;">speculativa.substack.com<br><span style="color:'+C.accent+';">@Vinodh_Rag</span></div></div>';
+
+  // Main panels
+  html+='<div style="flex:1;display:flex;">';
+
+  // LEFT: Gauges
+  html+='<div style="width:46%;padding:12px;border-right:1px solid '+C.border+';display:flex;flex-direction:column;gap:7px;">';
+  html+='<div><div style="font-size:9px;color:'+C.muted+';font-family:monospace;letter-spacing:1px;text-transform:uppercase;">Panel 1 &middot; System Pressure</div>';
+  html+='<div style="font-size:12px;font-weight:600;margin-top:1px;">Six gauges &mdash; all directional</div>';
+  html+='<div style="font-size:9px;color:'+C.muted+';margin-top:1px;">No threshold crossed in baseline. Stability and buildup coincide.</div></div>';
+  html+=stressBanner();
+  html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:7px;">';
+  Object.keys(GAUGE).forEach(function(k){html+=gaugeCard(k);});
+  html+='</div>';
+  html+='<div style="padding:7px 9px;background:'+C.panel+';border:1px solid '+C.border+';border-radius:6px;font-size:8px;color:'+C.muted+';font-family:monospace;line-height:1.65;">';
+  html+='DCR&uarr; &nbsp;CLC&darr; &nbsp;CV&uarr; &nbsp;TVR&darr; &nbsp;BTAR&uarr; &nbsp;&kappa;&uarr; &mdash; monotonic Y0&rarr;Y9.';
+  if(stressYr)html+=' <span style="color:'+C.red+';">Y10+ stress: CLC crosses 1.2 warning.</span>';
+  html+='</div></div>';
+
+  // RIGHT
+  html+='<div style="flex:1;padding:12px;display:flex;flex-direction:column;gap:9px;">';
+
+  // Panel 2: Stock
+  html+='<div style="flex:1;background:'+C.panel+';border:1px solid '+C.border+';border-radius:8px;padding:11px;">';
+  html+='<div style="font-size:9px;color:'+C.muted+';font-family:monospace;letter-spacing:1px;text-transform:uppercase;">Panel 2 &middot; Accumulated Stock</div>';
+  html+='<div style="font-size:12px;font-weight:600;margin-top:1px;">HedgeCo gross exposure vs JapCBCo reserves</div>';
+  html+='<div style="font-size:9px;color:'+C.muted+';margin-top:1px;margin-bottom:8px;">Routed surplus accumulates as leveraged GovCo bond positions. JapCBCo reserves flat.</div>';
+  html+=stockSVG();
+  html+='<div style="display:flex;gap:8px;margin-top:7px;flex-wrap:wrap;">';
+  [{label:"HedgeCo gross",val:"$"+HEDGECO[yr]+"B",col:C.accent},
+   {label:"JapanCo&rarr;GBC",val:"$"+GBC_DEP[yr]+"B",col:C.amber},
+   {label:"JapCBCo reserves",val:"$"+JAPCBCO[yr]+"B",col:C.teal}
+  ].forEach(function(s){
+    html+='<div style="background:'+s.col+'12;border:1px solid '+s.col+'28;border-radius:5px;padding:3px 8px;">';
+    html+='<div style="font-size:7px;color:'+C.muted+';font-family:monospace;">'+s.label+'</div>';
+    html+='<div style="font-size:12px;font-weight:700;color:'+s.col+';font-family:monospace;">'+s.val+'</div></div>';
+  });
+  html+='</div></div>';
+
+  // Divider
+  html+='<div style="height:1px;background:'+C.border+';flex-shrink:0;"></div>';
+
+  // Panel 3: Ratchet
+  html+='<div style="flex:1;background:'+C.panel+';border:1px solid '+C.border+';border-radius:8px;padding:11px;">';
+  html+='<div style="font-size:9px;color:'+C.muted+';font-family:monospace;letter-spacing:1px;text-transform:uppercase;">Panel 3 &middot; System Response</div>';
+  html+='<div style="font-size:12px;font-weight:600;margin-top:1px;">FedCo ratchet: each episode narrows the band</div>';
+  html+='<div style="font-size:9px;color:'+C.muted+';margin-top:1px;margin-bottom:8px;">BTAR pre&rarr;post&rarr;residual. Recovery incomplete. Next episode starts higher.</div>';
+  html+=ratchetSVG();
+  html+='<div style="display:flex;gap:5px;margin-top:7px;flex-wrap:wrap;">';
+  html+='<button onclick="setEp(null)" style="background:'+(activeEp===null?C.muted+"35":"transparent")+';border:1px solid '+C.border+';border-radius:4px;padding:2px 7px;color:'+C.muted+';font-size:8px;font-family:monospace;">ALL</button>';
+  RATCHET.forEach(function(r,i){
+    html+='<button onclick="setEp('+i+')" style="background:'+(activeEp===i?r.color+"28":"transparent")+';border:1px solid '+(activeEp===i?r.color:C.border)+';border-radius:4px;padding:2px 7px;color:'+(activeEp===i?r.color:C.muted)+';font-size:8px;font-family:monospace;">'+r.id+': '+r.label+' ($'+r.abs+'B)</button>';
+  });
+  html+='</div>';
+  html+='<div style="margin-top:7px;padding:5px 8px;background:'+C.red+'0e;border:1px solid '+C.red+'28;border-radius:4px;font-size:8px;color:'+C.muted+';font-family:monospace;">';
+  html+='FedCo remaining headroom Y10+: <span style="color:'+C.red+';">$147B</span>. All three episodes breach capacity. Band narrows each cycle.</div>';
+  html+='</div></div></div>';
+
+  // Slider
+  html+='<div style="display:flex;align-items:center;gap:10px;padding:10px 16px;background:'+C.panel+';border-top:1px solid '+C.border+';flex-shrink:0;">';
+  html+='<button onclick="togglePlay()" style="background:'+(playing?C.red+"28":C.accent+"28")+';border:1px solid '+(playing?C.red:C.accent)+';border-radius:5px;padding:4px 10px;color:'+(playing?C.red:C.accent)+';font-size:10px;font-family:monospace;min-width:60px;">'+(playing?"&#9646;&#9646; PAUSE":"&#9654; PLAY")+'</button>';
+  html+='<div style="flex:1;display:flex;flex-direction:column;gap:3px;">';
+  html+='<input type="range" min="0" max="10" step="1" value="'+yr+'" oninput="setYr(+this.value)"/>';
+  html+='<div style="display:flex;justify-content:space-between;font-size:7px;color:'+C.muted+';font-family:monospace;">';
+  for(var i=0;i<=10;i++){html+='<span style="color:'+(i===yr?C.accent:C.muted)+';font-weight:'+(i===yr?700:400)+';"> Y'+i+'</span>';}
+  html+='</div></div>';
+  html+='<div style="background:'+C.accent+'18;border:1px solid '+C.accent+'38;border-radius:5px;padding:3px 10px;font-family:monospace;font-size:12px;font-weight:700;color:'+C.accent+';min-width:44px;text-align:center;">Y'+yr+(yr===10?"+":"")+'</div>';
+  html+='</div>';
+
+  // Footer
+  html+='<div style="padding:5px 16px;border-top:1px solid '+C.border+';display:flex;justify-content:space-between;font-size:8px;color:'+C.muted+';font-family:monospace;flex-shrink:0;">';
+  html+='<span>toymodel_sfc_clean.xlsx &middot; SFC-consistent &middot; 1,440 formulas &middot; nine actors</span>';
+  html+='<span>Speculativa &middot; @Vinodh_Rag</span></div>';
+  html+='</div>';
+
+  document.getElementById("app").innerHTML=html;
+}
+
+function setYr(y){yr=y;playing=false;clearInterval(timer);render();}
+function setEp(i){activeEp=(activeEp===i)?null:i;render();}
+function togglePlay(){
+  playing=!playing;
+  if(playing){if(yr>=10){yr=0;}timer=setInterval(function(){yr++;if(yr>=10){playing=false;clearInterval(timer);}render();},900);}
+  else{clearInterval(timer);}
+  render();
+}
+
+render();
+</script>
+</body>
+</html>
