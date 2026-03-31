@@ -1,0 +1,8 @@
+# series_id: BARTH_BELTRAN_BASIS
+# description: Barth-Beltran: basis trade total vs TIC-visible, $B
+# generated: 2026-03-31T23:07:34.079727+00:00
+# rows: 2
+#
+date,total_bn,tic_bn,citation,gap_bn,series_id,unit,is_correct_for_slr_hypothesis,note
+2022-01-01,850,194.35135135135135,Barth et al. Oct 2025: '$1T increase Jan 2022-Dec 2024' => ~$850B start,655.6486486486486,BARTH_BELTRAN_BASIS,USD billions,True,"Primary citation: Barth, Beltran, Hoops, Kahn, Liu, Perozek, Fed FEDS Notes Oct 15 2025. total_bn = total basis trade exposure (Cayman-registered funds). tic_bn = TIC-visible portion ($423B). gap_bn = invisible portion ($1.4T, FICC novation breaks TIC chain)."
+2024-12-31,1850,423.0,"Barth, Beltran, Hoops, Kahn, Liu, Perozek. 'Cross-Border Trail of the Treasury Basis Trade.' Fed FEDS Notes Oct 15 2025. Cayman exposure $1.85T; TIC-visible $423B; gap $1.4T",1427.0,BARTH_BELTRAN_BASIS,USD billions,True,"Primary citation: Barth, Beltran, Hoops, Kahn, Liu, Perozek, Fed FEDS Notes Oct 15 2025. total_bn = total basis trade exposure (Cayman-registered funds). tic_bn = TIC-visible portion ($423B). gap_bn = invisible portion ($1.4T, FICC novation breaks TIC chain)."
